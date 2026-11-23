@@ -1,31 +1,61 @@
-# Gondal Digital Agency
-## Cloud & DevOps Engineering | Portfolio Project 2.2
-
-**Project status:** Tested · AWS cleanup complete · GitHub publication pending
-
 # EC2 Behind an Application Load Balancer with Auto Scaling
 
-A self-healing, load-balanced web tier on AWS that scaled from 2 to 4 EC2 instances under sustained load, with the results supported by terminal output and console evidence.
+**Cloud & DevOps Engineering \| Portfolio Project 2.2**
 
-## Project at a glance
+![Project status](https://img.shields.io/badge/Status-Tested-success)
+![AWS](https://img.shields.io/badge/Cloud-AWS-orange)
+![Region](https://img.shields.io/badge/Region-us--east--1-blue)
 
-| Metric | Result |
-|---|---:|
-| Initial capacity | 2 EC2 instances |
-| Scaled capacity | 4 EC2 instances |
-| Instance type | `t3.micro` |
-| AWS Region | `us-east-1` |
-| Availability Zones observed | `us-east-1b`, `us-east-1c`, `us-east-1d`, `us-east-1f` |
-| Healthy targets after scale-out | 4 of 4 |
-| Replacement launch initiated | Within 9 seconds of termination starting |
-| Approximate time from sustained load to scale-out | 5 minutes |
-| Live demo | Not available; AWS stack was torn down to avoid ongoing charges |
+A self-healing, load-balanced web tier on AWS. The project demonstrated
+traffic distribution across EC2 instances, automatic replacement of a
+terminated instance, and scale-out from **2 to 4 EC2 instances** under
+sustained load.
+
+> **Deployment status:** Tested successfully. The AWS project
+> infrastructure was removed after testing to avoid ongoing charges.
+> This repository contains the project documentation and evidence
+> screenshots; it is not a live deployment.
+
+## Project overview
+
+  -----------------------------------------------------------------------
+  Item                                Result
+  ----------------------------------- -----------------------------------
+  AWS Region                          `us-east-1`
+
+  Operating system                    Amazon Linux 2023
+
+  Instance type                       `t3.micro`
+
+  Initial Auto Scaling capacity       2 instances
+
+  Maximum Auto Scaling capacity       4 instances
+
+  Healthy targets after scale-out     4 of 4
+
+  Availability Zones observed         `us-east-1b`, `us-east-1c`,
+                                      `us-east-1d`, `us-east-1f`
+
+  Load balancer                       Application Load Balancer (ALB)
+
+  Listener                            HTTP, port 80
+
+  Web server                          Apache
+
+  Instance metadata                   IMDSv2 required
+
+  Live demo                           Not available; AWS resources have
+                                      been removed
+  -----------------------------------------------------------------------
 
 ## Architecture
 
-Internet traffic enters through one Application Load Balancer (ALB). EC2 instances accept inbound web traffic only from the ALB security group.
+Internet traffic enters through the Application Load Balancer. The ALB
+forwards requests to its registered targets. The Auto Scaling Group
+manages the EC2 fleet and registers replacement/new instances with the
+target group.
 
-```text
+``` text
                          Internet
                             |
                          HTTP :80
@@ -35,169 +65,275 @@ Internet traffic enters through one Application Load Balancer (ALB). EC2 instanc
                             |
                        Target Group
                             |
-        Auto Scaling Group (minimum 2, maximum 4)
-                    SG: gda-p22-ec2-sg
+             +--------------+--------------+
+             |              |              |
+          EC2 fleet managed by Auto Scaling Group
+             |              |              |
+          EC2 #1          EC2 #2        EC2 #3 / #4
+          t3.micro        t3.micro       t3.micro
+             |              |              |
+             +--------------+--------------+
                             |
-       +--------------------+--------------------+
-       |                    |                    |
-    EC2 t3.micro         EC2 t3.micro         EC2 t3.micro         EC2 t3.micro
-    us-east-1b           us-east-1c           us-east-1d           us-east-1f
-       |                    |                    |                    |
-       +--------------------+--------------------+--------------------+
-                            |
-           Amazon Linux 2023 · Apache · IMDSv2
+              Amazon Linux 2023 + Apache
+                   IMDSv2 required
 ```
 
-**Scaling configuration**
+### Security configuration
 
-- Policy type: target tracking
-- Metric: `ALBRequestCountPerTarget`
-- Target value: `30`
-- CloudWatch alarms: `AlarmHigh` and `AlarmLow` (created by the target-tracking policy)
+-   The ALB security group (`gda-p22-alb-sg`) allowed inbound HTTP
+    traffic on port 80.
+-   The EC2 security group (`gda-p22-ec2-sg`) allowed inbound HTTP
+    traffic on port 80 **only from the ALB security group**.
+-   The launch template required IMDSv2.
+-   The instances used a user-data script to install Apache and display
+    instance metadata (instance ID and Availability Zone) on the web
+    page.
 
-## Terminal evidence
+### Auto Scaling configuration
 
-Evidence below was copied from the AWS CloudShell session on **23 November 2026 (UTC)**.
+  -----------------------------------------------------------------------
+  Setting                             Configuration
+  ----------------------------------- -----------------------------------
+  Minimum capacity                    2
 
-### Test A — Load balancing
+  Maximum capacity                    4
 
-Two healthy targets served requests through the ALB from two Availability Zones.
+  Health check type                   ELB
 
-| Instance ID | Target health | Availability Zone | Requests observed |
-|---|---|---|---:|
-| `i-080e0cf83dbca007c` | Healthy | `us-east-1d` | 6 of 10 |
-| `i-0bc737e629efbcee2` | Healthy | `us-east-1b` | 4 of 10 |
+  Health-check grace period           120 seconds
 
-The observed split was 6/4. This demonstrates traffic distribution across both instances; it is **not** described as perfect round-robin balancing.
+  Scaling policy                      Target tracking
 
-### Test B — Self-healing
+  Scaling metric                      `ALBRequestCountPerTarget`
 
-The Auto Scaling Group detected a terminating instance and initiated a replacement.
+  Target value                        30 requests per target per minute
 
-```text
-12:14:23  Terminating EC2 instance: i-080e0cf83dbca007c
-          WaitingForELBConnectionDraining
+  CloudWatch alarms                   `AlarmHigh` and `AlarmLow` (created
+                                      by the target-tracking policy)
+  -----------------------------------------------------------------------
 
-12:14:32  Launching a new EC2 instance: i-04c2d3524d12c070a
-```
+The target value is the configured target-tracking threshold, not a
+claim that every individual minute remained at exactly 30 requests per
+target.
 
-A subsequent target-health check showed:
+## Test results and evidence
 
-| Instance ID | Target state |
-|---|---|
-| `i-080e0cf83dbca007c` | Draining |
-| `i-04c2d3524d12c070a` | Healthy |
-| `i-0bc737e629efbcee2` | Healthy |
+The following results were observed during the AWS CloudShell and EC2
+console tests on **23 November 2026**. Screenshots are stored in the
+`screenshots/` directory.
 
-**Result:** The ASG started launching a replacement 9 seconds after the termination event began. The replacement later became healthy without manual intervention. The other instance remained healthy.
+### Test 1 --- Load balancing
 
-### Test C — Scale-out
+Two healthy targets in two Availability Zones served requests through
+the ALB.
 
-A sustained load test ran for approximately 7 minutes. The `AlarmHigh` alarm crossed its threshold:
+  Instance ID             Availability Zone     Requests observed
+  ----------------------- ------------------- -------------------
+  `i-080e0cf83dbca007c`   `us-east-1d`                    6 of 10
+  `i-0bc737e629efbcee2`   `us-east-1b`                    4 of 10
 
-```text
-ALARM
+The observed distribution was **6/4 across 10 requests**. This confirms
+that both registered instances served traffic; it does not demonstrate a
+strict or perfectly even round-robin distribution.
+
+### Test 2 --- Auto Scaling self-healing
+
+The Auto Scaling Group replaced an instance after its termination was
+initiated.
+
+  ------------------------------------------------------------------------
+  Event                                   Time (UTC) Evidence
+  --------------------- ---------------------------- ---------------------
+  Original instance                         12:14:23 ASG activity history
+  termination activity                               
+
+  Replacement instance                      12:14:30 ASG activity history
+  launch activity                                    
+
+  Replacement instance         `i-04c2d3524d12c070a` Target later reported
+                                                     Healthy
+  ------------------------------------------------------------------------
+
+**Observed result:** The ASG activity-history screenshot shows the
+replacement launch activity at 12:14:30, seven seconds after the
+termination activity at 12:14:23. A later target-health check showed the
+replacement as Healthy. The seven-second figure refers to the **launch
+activity being recorded**, not to the instance becoming healthy.
+
+The original terminal notes recorded the launch at 12:14:32. The console
+activity-history screenshot shows 12:14:30; this README uses the
+screenshot timestamp for the documented seven-second comparison.
+
+### Test 3 --- Scale-out under sustained load
+
+A sustained load test ran for approximately seven minutes. The
+target-tracking policy's `AlarmHigh` alarm entered the ALARM state and
+triggered `gda-p22-req-policy`.
+
+The alarm evidence included three datapoints above the configured
+threshold of 30:
+
+``` text
 Threshold Crossed: 3 datapoints
 [442066.5 (12:32), 439754.0 (12:31), 122052.0 (12:30)]
 were greater than the threshold (30.0).
 ```
 
-The Auto Scaling Group capacity changed from 2 to 4:
+The Auto Scaling activity history recorded the capacity increase:
 
-```text
-Desired capacity: 4
-Current capacity: 4
-
-12:35:59  Launching a new EC2 instance: i-05de71f0608a15c57
-12:35:59  Launching a new EC2 instance: i-09f829f674374ca5a
+``` text
+12:35:47  AlarmHigh triggered gda-p22-req-policy
+12:35:57  Desired capacity increased from 2 to 4
 ```
 
-The target group subsequently showed **4 total targets, 4 healthy, 0 unhealthy**, distributed across `us-east-1b`, `us-east-1c`, `us-east-1d`, and `us-east-1f`.
+Two new EC2 instances were launched:
 
-The ASG activity history confirmed that `AlarmHigh` triggered `gda-p22-req-policy`, increasing capacity from 2 to 4.
+-   `i-05de71f0608a15c57`
+-   `i-09f829f674374ca5a`
+
+The target-group screenshot subsequently showed **4 registered targets,
+all Healthy**, across four Availability Zones:
+
+-   `us-east-1b`
+-   `us-east-1c`
+-   `us-east-1d`
+-   `us-east-1f`
+
+The scale-out activity-history screenshot and target-health screenshot
+are included in this repository's evidence folder.
+
+### Test summary
+
+  -----------------------------------------------------------------------
+  Test                                Result
+  ----------------------------------- -----------------------------------
+  ALB traffic distribution            Passed --- both instances served
+                                      requests; observed split 6/4
+
+  Instance self-healing               Passed --- replacement launch
+                                      activity recorded; replacement
+                                      later became Healthy
+
+  Target-tracking scale-out           Passed --- desired capacity
+                                      increased from 2 to 4; all 4
+                                      targets later Healthy
+  -----------------------------------------------------------------------
 
 ## Technical workflow
 
-The infrastructure was built using AWS CloudShell and the AWS CLI.
+The infrastructure was created using AWS CloudShell and the AWS CLI.
 
-1. **Discover defaults:** Identified the default VPC, default subnets across Availability Zones, and the Amazon Linux 2023 AMI through SSM Parameter Store.
-2. **Create least-privilege security groups:** The ALB security group allowed HTTP port 80 from the internet. The EC2 security group allowed HTTP port 80 only from the ALB security group.
-3. **Configure launch template:** Used `t3.micro`, required IMDSv2, and supplied user data to install Apache and write the instance ID and Availability Zone to the web page.
-4. **Create target group, ALB, and listener:** Configured an HTTP listener and an HTTP health check on `/`, with a 15-second interval and 2 successful checks for healthy status.
-5. **Configure Auto Scaling Group:** Set minimum capacity to 2, maximum capacity to 4, ELB health checks, a 120-second health-check grace period, and subnets across the default Availability Zones.
-6. **Configure target tracking:** Set `ALBRequestCountPerTarget` to 30. CloudWatch `AlarmHigh` and `AlarmLow` alarms were created by the scaling policy.
-7. **Test and clean up:** Verified load distribution, self-healing, and scale-out, then removed the project infrastructure to avoid ongoing AWS charges.
+1.  **Discover AWS defaults:** Identified the default VPC, default
+    subnets across Availability Zones, and the Amazon Linux 2023 AMI
+    using SSM Parameter Store.
+2.  **Create security groups:** Configured the ALB security group for
+    inbound HTTP and the EC2 security group to accept HTTP only from the
+    ALB security group.
+3.  **Create launch template:** Configured `t3.micro`, required IMDSv2,
+    and supplied user data to install Apache and display instance
+    metadata.
+4.  **Create load-balancing resources:** Created the target group, ALB,
+    HTTP listener, and HTTP health check on `/`.
+5.  **Create Auto Scaling Group:** Configured minimum capacity 2,
+    maximum capacity 4, ELB health checks, a 120-second health-check
+    grace period, and subnets across the selected default Availability
+    Zones.
+6.  **Configure target tracking:** Created a target-tracking policy
+    using `ALBRequestCountPerTarget` with a target value of 30. AWS
+    created the associated high/low CloudWatch alarms.
+7.  **Test and clean up:** Tested request distribution, instance
+    replacement, and scale-out. Removed the project infrastructure after
+    testing to avoid ongoing AWS charges.
 
-## Testing summary
+## Lesson learned: sustained load matters
 
-| Test | What was checked | Result |
-|---|---|---|
-| A. Load balancing | 10 requests through the ALB DNS name | **Passed.** Two instances in two AZs served traffic; observed split was 6 and 4. |
-| B. Self-healing | Terminated one instance and observed ASG replacement | **Passed.** Replacement launch began within 9 seconds; it later became healthy without manual intervention. |
-| C. Scale-out | Approximately 7 minutes of sustained load | **Passed.** `AlarmHigh` triggered, capacity increased from 2 to 4, and all 4 targets became healthy. |
+The first load test (`ab -n 200000`) completed in approximately one
+minute. That short burst did not sustain traffic long enough for the
+target-tracking alarm to observe the required consecutive one-minute
+datapoints.
 
-### Lesson learned: sustained load matters
+A time-based load test (`-t 420`) maintained traffic for approximately
+seven minutes and allowed the alarm and scaling policy to respond.
 
-The first load test (`ab -n 200000`) completed in about one minute. That was insufficient for the alarm to observe the three consecutive one-minute datapoints needed to trigger the scaling policy. The metric showed approximately 100,000 requests per target in one minute (200,000 total), followed by silence.
+## Evidence screenshots
 
-Using a time-based load test (`-t 420`) sustained traffic long enough for the alarm and scaling policy to respond.
+Add the supplied screenshots to the repository using these filenames:
 
-## Automation scripts
+  ------------------------------------------------------------------------------------
+  Screenshot                                       Description
+  ------------------------------------------------ -----------------------------------
+  `screenshots/target-group-4-healthy.png`         Target group showing 4 registered
+                                                   targets, all Healthy
 
-The following scripts are **planned for the repository** and are to be derived from the commands used during the original deployment. They are not represented as existing or validated automation scripts.
+  `screenshots/autoscaling-activity-history.png`   ASG activity history showing
+                                                   instance replacement and scale-out
+  ------------------------------------------------------------------------------------
 
-### `scripts/deploy.sh` — planned
+Once the images are committed, the screenshots will render below:
 
-Intended to automate variables, security groups, launch template, target group, ALB, listener, Auto Scaling Group, and scaling policy creation.
+### Target group --- 4 healthy targets
 
-### `scripts/cleanup.sh` — planned
+![Target group showing four healthy
+targets](screenshots/target-group-4-healthy.png)
 
-Intended to remove the Auto Scaling Group, listener, ALB, target group, launch template, and security groups, including waits for dependent resources.
+### Auto Scaling activity history
 
-### Operational notes
+![Auto Scaling activity
+history](screenshots/autoscaling-activity-history.png)
 
-- Set `AWS_PAGER=""` to prevent AWS CLI pager interruptions.
-- Allow approximately 2 minutes after ALB deletion before attempting target-group deletion, so dependent resources can finish releasing.
+## Repository contents
 
-## Project outcomes and metrics
+``` text
+aws-alb-autoscaling-ec2/
+├── README.md
+└── screenshots/
+    ├── target-group-4-healthy.png
+    └── autoscaling-activity-history.png
+```
 
-| Outcome | Observed result |
-|---|---:|
-| Scale-out | 2 → 4 instances |
-| Healthy targets after scale-out | 4 of 4 |
-| Availability Zones | 4 |
-| Time to initiate replacement launch | 9 seconds from termination start |
-| Approximate time from load start to scale-out | 5 minutes |
-| Observed requests per target per minute | Approximately 392k–442k (12:31–12:36 UTC) |
-| Deregistration delay | 300 seconds (default; unchanged) |
+The two screenshots listed above are the evidence supplied for this
+documentation update. Additional test screenshots may be added when
+available.
 
-## Limitations and next steps
+## Limitations and future improvements
 
-### Limitations
+### Limitations of this implementation
 
-- Used the default VPC with public EC2 instances.
-- HTTP only; HTTPS was not configured.
-- No request-level downtime test was performed during instance replacement.
-- The Apache Benchmark (`ab`) summary metrics, including failed requests and requests per second, were not captured.
-- No live demo is available because the AWS stack has been removed to avoid ongoing charges.
+-   Used the default VPC and public EC2 instances.
+-   HTTP only; HTTPS was not configured.
+-   No request-level downtime test was performed during instance
+    replacement.
+-   Apache Benchmark (`ab`) summary metrics, including failed requests
+    and requests per second, were not captured.
+-   The deployment was removed after testing, so there is no live demo.
+-   Deployment and cleanup automation scripts are not included in this
+    repository version.
 
-### Next project: Project 2.2b
+### Planned next iteration --- Project 2.2b
 
-The planned next iteration will use Terraform, a custom VPC, private subnets, and HTTPS through AWS Certificate Manager (ACM).
+The next iteration is planned to introduce:
 
-## GitHub and live links
+-   Terraform infrastructure as code.
+-   A custom VPC.
+-   Private subnets for EC2 instances.
+-   HTTPS using AWS Certificate Manager (ACM).
+-   Improved deployment and cleanup automation.
 
-| Resource | Link / status |
-|---|---|
-| GitHub profile | [github.com/sherazgondal5212](https://github.com/sherazgondal5212) |
-| Repository | `aws-alb-autoscaling-ec2` — publication pending |
-| Live demo | None — AWS resources have been torn down |
+## GitHub
+
+-   **Repository:**
+    [aws-alb-autoscaling-ec2](https://github.com/sherazgondal5212/aws-alb-autoscaling-ec2)
+-   **GitHub profile:**
+    [sherazgondal5212](https://github.com/sherazgondal5212)
+-   **Live demo:** Not available --- AWS infrastructure has been
+    removed.
 
 ## About Gondal Digital Agency
 
-**Gondal Digital Agency (GDA)** — premium international cloud and digital engineering, supporting startups and businesses with reliable technology solutions on AWS.
+**Gondal Digital Agency (GDA)** is a cloud and digital engineering brand
+focused on helping startups and businesses with technology solutions.
 
-Website: [gondaldigitalagency.com](https://gondaldigitalagency.com)
+Website: [gondaldigitalagency.com](https://gondaldigitalagency.com/)
 
-**Muhammad Sheraz Gondal**  
+**Muhammad Sheraz Gondal**\
 Founder & CEO, Gondal Digital Agency
